@@ -1,63 +1,209 @@
-:root {
-    --bg-main: #0f0f0f;
-    --bg-sidebar: #000000;
-    --bg-card: #1a1a1a;
-    --accent: #e50914;
-    --text: #ffffff;
-    --border: #2b2b2b;
+const CREDENTIALS = { user: "admin", pass: "admin123" };
+let allVideos = [];
+let currentPlaylist = [];
+let currentIndex = -1;
+let activeFilterVideos = []; 
+
+// Função de segurança para extrair o título independente de acentos no JSON
+function getSafeTitle(video) {
+    return video.título || video.titulo || "Sem Título";
 }
 
-* { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Inter', sans-serif; }
-body { background-color: var(--bg-main); color: var(--text); overflow: hidden; }
-.hidden { display: none !important; }
+document.addEventListener("DOMContentLoaded", () => {
+    const sidebar = document.getElementById("sidebar");
+    document.getElementById("toggle-menu").addEventListener("click", () => sidebar.classList.toggle("collapsed"));
 
-.login-container { height: 100vh; display: flex; justify-content: center; align-items: center; background: #000; }
-.login-box { background: #141414; padding: 40px; border-radius: 12px; width: 350px; text-align: center; border: 1px solid var(--border); }
-.login-box h2 { color: var(--accent); margin-bottom: 20px; }
-.input-group { text-align: left; margin-bottom: 15px; }
-.input-group label { font-size: 12px; color: #888; display: block; margin-bottom: 5px; }
-.input-group input { width: 100%; padding: 10px; background: #333; border: none; color: #fff; border-radius: 4px; }
-.btn-login { width: 100%; padding: 12px; background: var(--accent); border: none; color: #fff; font-weight: bold; cursor: pointer; border-radius: 4px; }
-.error-message { color: var(--accent); margin-top: 10px; display: none; }
+    document.getElementById("search-input").addEventListener("input", (e) => {
+        const term = e.target.value.toLowerCase().trim();
+        const filtered = activeFilterVideos.filter(v => {
+            const title = getSafeTitle(v).toLowerCase();
+            const cat = (v.categoria || "").toLowerCase();
+            const sub = (v.subcategoria || "").toLowerCase();
+            return title.includes(term) || cat.includes(term) || sub.includes(term);
+        });
+        renderGrid(filtered, document.getElementById("current-view-title").innerText, false);
+    });
 
-.main-wrapper { display: flex; height: 100vh; }
-.sidebar { width: 260px; background: var(--bg-sidebar); border-right: 1px solid var(--border); transition: width 0.3s ease; display: flex; flex-direction: column; position: relative; }
-.sidebar.collapsed { width: 60px; }
-.sidebar.collapsed .sidebar-header, .sidebar.collapsed .category-title-link span, .sidebar.collapsed .subcategory-list, .sidebar.collapsed .btn-logout span { display: none; }
+    document.getElementById("login-form").addEventListener("submit", (e) => {
+        e.preventDefault();
+        if(document.getElementById("username").value === CREDENTIALS.user && 
+           document.getElementById("password").value === CREDENTIALS.pass) {
+            localStorage.setItem("session", "true");
+            initApp();
+        } else {
+            document.getElementById("login-error").style.display = "block";
+        }
+    });
 
-.sidebar-toggle { padding: 20px; cursor: pointer; text-align: center; color: var(--accent); font-size: 20px; }
-.sidebar-content { flex: 1; padding: 0 10px; overflow-y: auto; overflow-x: hidden; }
-.category-title-link { padding: 12px; cursor: pointer; display: block; white-space: nowrap; }
-.category-title-link:hover { background: #1a1a1a; border-radius: 8px; }
-.subcategory-list { padding-left: 30px; list-style: none; margin-bottom: 10px; }
-.subcategory-list li { padding: 8px 0; color: #888; cursor: pointer; font-size: 14px; }
-.subcategory-list li:hover { color: #fff; }
+    if(localStorage.getItem("session") === "true") initApp();
+    
+    document.getElementById("btn-logout").addEventListener("click", () => {
+        localStorage.clear();
+        location.reload();
+    });
+});
 
-.content-area { flex: 1; overflow-y: auto; padding: 30px; display: flex; flex-direction: column; }
-.top-search-bar { width: 100%; margin-bottom: 25px; }
-.search-box { display: flex; align-items: center; background: #141414; border: 1px solid var(--border); padding: 12px 20px; border-radius: 30px; max-width: 600px; }
-.search-box i { color: #666; margin-right: 15px; }
-.search-box input { background: transparent; border: none; color: #fff; font-size: 15px; width: 100%; outline: none; }
+async function initApp() {
+    document.getElementById("login-screen").classList.add("hidden");
+    document.getElementById("main-content").classList.remove("hidden");
+    
+    try {
+        const pathName = window.location.pathname;
+        const basePath = pathName.substring(0, pathName.lastIndexOf('/')) + '/';
+        const jsonUrl = window.location.origin + basePath + 'videos.json';
 
-.main-header { margin-bottom: 30px; border-bottom: 1px solid var(--border); padding-bottom: 15px; }
-.playlist-row { background: #141414; border-radius: 12px; padding: 20px; margin-bottom: 30px; border: 1px solid var(--border); }
-.playlist-header { display: flex; align-items: center; gap: 20px; cursor: pointer; }
-.playlist-cover-preview { width: 160px; height: 90px; object-fit: cover; border-radius: 8px; border: 1px solid #333; }
-.playlist-info h2 { font-size: 1.3rem; margin-bottom: 4px; }
-.playlist-info p { color: #666; font-size: 0.9rem; }
-.status-icon { color: var(--accent); margin-left: 5px; }
+        // Cache busting: adiciona um número aleatório para garantir que o navegador baixe o JSON novo
+        const res = await fetch(jsonUrl + "?t=" + new Date().getTime());
+        allVideos = await res.json();
+        activeFilterVideos = allVideos;
+        
+        buildSidebar(allVideos);
+        renderGrid(allVideos, 'Início');
+        setupModal();
+    } catch (error) {
+        console.error("Erro ao carregar banco de dados JSON", error);
+    }
+}
 
-.playlist-videos-expand { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 20px; margin-top: 20px; padding-top: 20px; border-top: 1px solid var(--border); }
-.video-card { background: var(--bg-card); border-radius: 8px; overflow: hidden; cursor: pointer; transition: 0.2s; border: 1px solid transparent; }
-.video-card:hover { transform: scale(1.03); border-color: var(--accent); }
-.video-thumb { width: 100%; aspect-ratio: 16/9; object-fit: cover; }
-.video-info { padding: 12px; font-size: 14px; color: #ffffff !important; font-weight: bold; }
+function buildSidebar(videos) {
+    const menu = document.getElementById("sidebar-menu");
+    const cats = [...new Set(videos.map(v => v.categoria).filter(Boolean))];
+    menu.innerHTML = `<div class="category-title-link" onclick="resetToHome()"><i class="fa-solid fa-house"></i> <span>Início</span></div>`;
+    
+    cats.forEach(cat => {
+        const subCats = [...new Set(videos.filter(v => v.categoria === cat).map(v => v.subcategoria).filter(Boolean))];
+        let html = `<div class="category-title-link" onclick="filterCat('${cat}')"><i class="fa-solid fa-folder"></i> <span>${cat}</span></div>`;
+        html += `<ul class="subcategory-list">`;
+        subCats.forEach(sub => {
+            html += `<li onclick="filterSub('${cat}', '${sub}')">${sub}</li>`;
+        });
+        html += `</ul>`;
+        menu.innerHTML += html;
+    });
+}
 
-.video-modal { position: fixed; inset: 0; z-index: 9999; display: flex; align-items: center; justify-content: center; }
-.modal-backdrop { position: absolute; inset: 0; background: rgba(0,0,0,0.9); }
-.modal-content { position: relative; width: 90%; height: 85%; background: #000; border-radius: 12px; display: flex; flex-direction: column; overflow: hidden; }
-.player-container { flex: 1; background: #000; }
-.player-container iframe, .player-container video { width: 100%; height: 100%; border: none; }
-.player-controls-bar { padding: 20px; background: #111; display: flex; justify-content: space-between; align-items: center; }
-.control-btn { background: #333; border: none; color: #fff; padding: 10px 20px; border-radius: 5px; cursor: pointer; }
-.close-btn { position: absolute; top: 10px; right: 10px; z-index: 10; background: rgba(0,0,0,0.5); border: none; color: #fff; font-size: 24px; cursor: pointer; width: 40px; height: 40px; border-radius: 50%; }
+function resetToHome() {
+    document.getElementById("search-input").value = "";
+    activeFilterVideos = allVideos;
+    renderGrid(allVideos, 'Início');
+}
+
+function renderGrid(videos, title = "Vídeos", updateActive = true) {
+    document.getElementById("current-view-title").innerText = title;
+    const grid = document.getElementById("categories-grid");
+    grid.innerHTML = "";
+
+    if (updateActive) activeFilterVideos = videos;
+
+    const groups = {};
+    videos.forEach(v => {
+        const k = `${v.categoria}${v.subcategoria ? ' > ' + v.subcategoria : ''}`;
+        if(!groups[k]) groups[k] = [];
+        groups[k].push(v);
+    });
+
+    for(let key in groups) {
+        const vids = groups[key];
+        const row = document.createElement("div");
+        row.className = "playlist-row";
+        
+        row.innerHTML = `
+            <div class="playlist-header" data-expanded="false">
+                <img src="${vids[0].capa}" class="playlist-cover-preview">
+                <div class="playlist-info">
+                    <h2>${key}</h2>
+                    <p><span>${vids.length} vídeos</span> — <span class="status-icon">Clique para abrir <i class="fa-solid fa-chevron-down"></i></span></p>
+                </div>
+            </div>
+            <div class="playlist-videos-expand hidden"></div>
+        `;
+        
+        const header = row.querySelector(".playlist-header");
+        const container = row.querySelector(".playlist-videos-expand");
+        
+        header.addEventListener("click", () => {
+            const isExpanded = header.getAttribute("data-expanded") === "true";
+            if(isExpanded) {
+                container.classList.add("hidden");
+                container.innerHTML = "";
+                header.setAttribute("data-expanded", "false");
+                header.querySelector(".status-icon").innerHTML = 'Clique para abrir <i class="fa-solid fa-chevron-down"></i>';
+            } else {
+                container.innerHTML = "";
+                vids.forEach(vid => {
+                    const card = document.createElement("div");
+                    card.className = "video-card";
+                    // CORREÇÃO: Chama getSafeTitle para evitar o undefined
+                    card.innerHTML = `
+                        <img src="${vid.capa}" class="video-thumb">
+                        <div class="video-info">${getSafeTitle(vid)}</div>
+                    `;
+                    card.onclick = (e) => {
+                        e.stopPropagation();
+                        openPlayer(vid, vids);
+                    };
+                    container.appendChild(card);
+                });
+                container.classList.remove("hidden");
+                header.setAttribute("data-expanded", "true");
+                header.querySelector(".status-icon").innerHTML = 'Clique para fechar <i class="fa-solid fa-chevron-up"></i>';
+            }
+        });
+        grid.appendChild(row);
+    }
+}
+
+function filterCat(c) { 
+    document.getElementById("search-input").value = "";
+    renderGrid(allVideos.filter(v => v.categoria === c), c); 
+}
+function filterSub(c, s) { 
+    document.getElementById("search-input").value = "";
+    renderGrid(allVideos.filter(v => v.categoria === c && v.subcategoria === s), s); 
+}
+
+function openPlayer(video, playlist) {
+    currentPlaylist = playlist;
+    currentIndex = playlist.findIndex(v => v.link === video.link);
+    const modal = document.getElementById("video-modal");
+    const wrapper = document.getElementById("player-wrapper");
+    modal.classList.remove("hidden");
+    // CORREÇÃO: Chama getSafeTitle aqui também
+    document.getElementById("modal-video-title").innerText = getSafeTitle(video);
+
+    const url = video.link.trim();
+    const isDirectFile = /\.(mp4|webm|ogg|mov|m4v)($|\?)/i.test(url);
+
+    if (isDirectFile) {
+        wrapper.innerHTML = `<video id="main-player" controls autoplay><source src="${url}" type="video/mp4"></video>`;
+        wrapper.querySelector('video').onended = () => changeVideo(1);
+    } else {
+        let finalUrl = url;
+        if (url.includes("youtube.com") || url.includes("youtu.be")) {
+            finalUrl += (url.includes("?") ? "&" : "?") + "autoplay=1";
+        }
+        wrapper.innerHTML = `<iframe id="main-player" src="${finalUrl}" allow="autoplay; fullscreen" allowfullscreen></iframe>`;
+    }
+}
+
+function changeVideo(step) {
+    currentIndex += step;
+    if(currentIndex >= 0 && currentIndex < currentPlaylist.length) {
+        openPlayer(currentPlaylist[currentIndex], currentPlaylist);
+    } else if (currentIndex >= currentPlaylist.length) {
+        alert("Fim da playlist!");
+        closeModal();
+    }
+}
+
+function closeModal() {
+    document.getElementById("video-modal").classList.add("hidden");
+    document.getElementById("player-wrapper").innerHTML = "";
+}
+
+function setupModal() {
+    document.getElementById("close-modal").onclick = closeModal;
+    document.getElementById("next-video-btn").onclick = () => changeVideo(1);
+    document.getElementById("prev-video-btn").onclick = () => changeVideo(-1);
+    document.querySelector(".modal-backdrop").onclick = closeModal;
+}
