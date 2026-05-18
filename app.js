@@ -2,12 +2,8 @@ const CREDENTIALS = { user: "admin", pass: "admin123" };
 let allVideos = [];
 let currentPlaylist = [];
 let currentIndex = -1;
-let activeFilterVideos = []; 
 
-// Função de segurança para extrair o título independente de acentos no JSON
-function getSafeTitle(video) {
-    return video.título || video.titulo || "Sem Título";
-}
+function getSafeTitle(v) { return v.título || v.titulo || "Sem Título"; }
 
 document.addEventListener("DOMContentLoaded", () => {
     const sidebar = document.getElementById("sidebar");
@@ -15,13 +11,12 @@ document.addEventListener("DOMContentLoaded", () => {
 
     document.getElementById("search-input").addEventListener("input", (e) => {
         const term = e.target.value.toLowerCase().trim();
-        const filtered = activeFilterVideos.filter(v => {
-            const title = getSafeTitle(v).toLowerCase();
-            const cat = (v.categoria || "").toLowerCase();
-            const sub = (v.subcategoria || "").toLowerCase();
-            return title.includes(term) || cat.includes(term) || sub.includes(term);
-        });
-        renderGrid(filtered, document.getElementById("current-view-title").innerText, false);
+        const filtered = allVideos.filter(v => 
+            getSafeTitle(v).toLowerCase().includes(term) || 
+            (v.categoria || "").toLowerCase().includes(term) || 
+            (v.subcategoria || "").toLowerCase().includes(term)
+        );
+        renderGrid(filtered, "Busca: " + term);
     });
 
     document.getElementById("login-form").addEventListener("submit", (e) => {
@@ -52,148 +47,186 @@ async function initApp() {
         const basePath = pathName.substring(0, pathName.lastIndexOf('/')) + '/';
         const jsonUrl = window.location.origin + basePath + 'videos.json';
 
-        // Cache busting: adiciona um número aleatório para garantir que o navegador baixe o JSON novo
         const res = await fetch(jsonUrl + "?t=" + new Date().getTime());
         allVideos = await res.json();
-        activeFilterVideos = allVideos;
         
         buildSidebar(allVideos);
         renderGrid(allVideos, 'Início');
         setupModal();
     } catch (error) {
-        console.error("Erro ao carregar banco de dados JSON", error);
+        console.error("Erro JSON:", error);
     }
 }
 
+// SIDEBAR COM EXPANSÃO/RECOLHIMENTO
 function buildSidebar(videos) {
     const menu = document.getElementById("sidebar-menu");
     const cats = [...new Set(videos.map(v => v.categoria).filter(Boolean))];
-    menu.innerHTML = `<div class="category-title-link" onclick="resetToHome()"><i class="fa-solid fa-house"></i> <span>Início</span></div>`;
+    
+    menu.innerHTML = `<div class="category-item" onclick="resetToHome()"><span><i class="fa-solid fa-house"></i> Início</span></div>`;
     
     cats.forEach(cat => {
+        const group = document.createElement("div");
+        group.className = "menu-category-group";
+        
+        const catBtn = document.createElement("div");
+        catBtn.className = "category-item";
+        catBtn.innerHTML = `<span><i class="fa-solid fa-folder"></i> ${cat}</span> <i class="fa-solid fa-chevron-down chevron"></i>`;
+        
+        const subList = document.createElement("ul");
+        subList.className = "subcategory-list hidden";
+        
         const subCats = [...new Set(videos.filter(v => v.categoria === cat).map(v => v.subcategoria).filter(Boolean))];
-        let html = `<div class="category-title-link" onclick="filterCat('${cat}')"><i class="fa-solid fa-folder"></i> <span>${cat}</span></div>`;
-        html += `<ul class="subcategory-list">`;
         subCats.forEach(sub => {
-            html += `<li onclick="filterSub('${cat}', '${sub}')">${sub}</li>`;
+            const li = document.createElement("li");
+            li.innerText = sub;
+            li.onclick = (e) => {
+                e.stopPropagation();
+                filterSub(cat, sub);
+            };
+            subList.appendChild(li);
         });
-        html += `</ul>`;
-        menu.innerHTML += html;
+
+        catBtn.onclick = () => {
+            const isHidden = subList.classList.contains("hidden");
+            // Fecha outros grupos se quiser (opcional), aqui vamos apenas alternar o atual
+            catBtn.classList.toggle("expanded");
+            subList.classList.toggle("hidden");
+            // Ao clicar no nome da categoria, também filtra no corpo principal
+            filterCat(cat);
+        };
+
+        group.appendChild(catBtn);
+        group.appendChild(subList);
+        menu.appendChild(group);
     });
 }
 
 function resetToHome() {
     document.getElementById("search-input").value = "";
-    activeFilterVideos = allVideos;
     renderGrid(allVideos, 'Início');
 }
 
-function renderGrid(videos, title = "Vídeos", updateActive = true) {
+// CORPO DO SITE EM CASCATA
+function renderGrid(videos, title) {
     document.getElementById("current-view-title").innerText = title;
     const grid = document.getElementById("categories-grid");
     grid.innerHTML = "";
 
-    if (updateActive) activeFilterVideos = videos;
-
-    const groups = {};
+    const catGroups = {};
     videos.forEach(v => {
-        const k = `${v.categoria}${v.subcategoria ? ' > ' + v.subcategoria : ''}`;
-        if(!groups[k]) groups[k] = [];
-        groups[k].push(v);
+        if(!catGroups[v.categoria]) catGroups[v.categoria] = [];
+        catGroups[v.categoria].push(v);
     });
 
-    for(let key in groups) {
-        const vids = groups[key];
+    for(let catName in catGroups) {
+        const catVideos = catGroups[catName];
         const row = document.createElement("div");
-        row.className = "playlist-row";
-        
+        row.className = "category-row";
         row.innerHTML = `
-            <div class="playlist-header" data-expanded="false">
-                <img src="${vids[0].capa}" class="playlist-cover-preview">
-                <div class="playlist-info">
-                    <h2>${key}</h2>
-                    <p><span>${vids.length} vídeos</span> — <span class="status-icon">Clique para abrir <i class="fa-solid fa-chevron-down"></i></span></p>
+            <div class="row-header" data-expanded="false">
+                <img src="${catVideos[0].capa}" class="row-cover-preview">
+                <div class="row-info">
+                    <h2>${catName}</h2>
+                    <p>${catVideos.length} vídeos — <span class="status-icon">Ver subcategorias <i class="fa-solid fa-chevron-down"></i></span></p>
                 </div>
             </div>
-            <div class="playlist-videos-expand hidden"></div>
+            <div class="sub-container hidden"></div>
         `;
-        
-        const header = row.querySelector(".playlist-header");
-        const container = row.querySelector(".playlist-videos-expand");
-        
-        header.addEventListener("click", () => {
-            const isExpanded = header.getAttribute("data-expanded") === "true";
-            if(isExpanded) {
-                container.classList.add("hidden");
-                container.innerHTML = "";
+
+        const header = row.querySelector(".row-header");
+        const subDiv = row.querySelector(".sub-container");
+
+        header.onclick = () => {
+            const exp = header.getAttribute("data-expanded") === "true";
+            if(exp) {
+                subDiv.classList.add("hidden");
+                subDiv.innerHTML = "";
                 header.setAttribute("data-expanded", "false");
-                header.querySelector(".status-icon").innerHTML = 'Clique para abrir <i class="fa-solid fa-chevron-down"></i>';
             } else {
-                container.innerHTML = "";
-                vids.forEach(vid => {
-                    const card = document.createElement("div");
-                    card.className = "video-card";
-                    // CORREÇÃO: Chama getSafeTitle para evitar o undefined
-                    card.innerHTML = `
-                        <img src="${vid.capa}" class="video-thumb">
-                        <div class="video-info">${getSafeTitle(vid)}</div>
-                    `;
-                    card.onclick = (e) => {
-                        e.stopPropagation();
-                        openPlayer(vid, vids);
-                    };
-                    container.appendChild(card);
-                });
-                container.classList.remove("hidden");
+                renderSubRows(catVideos, subDiv);
+                subDiv.classList.remove("hidden");
                 header.setAttribute("data-expanded", "true");
-                header.querySelector(".status-icon").innerHTML = 'Clique para fechar <i class="fa-solid fa-chevron-up"></i>';
             }
-        });
+        };
         grid.appendChild(row);
     }
 }
 
-function filterCat(c) { 
-    document.getElementById("search-input").value = "";
-    renderGrid(allVideos.filter(v => v.categoria === c), c); 
-}
-function filterSub(c, s) { 
-    document.getElementById("search-input").value = "";
-    renderGrid(allVideos.filter(v => v.categoria === c && v.subcategoria === s), s); 
+function renderSubRows(videos, container) {
+    const subs = {};
+    videos.forEach(v => {
+        const s = v.subcategoria || "Geral";
+        if(!subs[s]) subs[s] = [];
+        subs[s].push(v);
+    });
+
+    for(let sName in subs) {
+        const sVids = subs[sName];
+        const sRow = document.createElement("div");
+        sRow.className = "subcategory-row";
+        sRow.innerHTML = `
+            <div class="row-header" data-expanded="false">
+                <div class="row-info">
+                    <h2><i class="fa-solid fa-caret-right"></i> ${sName}</h2>
+                    <p>${sVids.length} vídeos</p>
+                </div>
+            </div>
+            <div class="v-grid hidden"></div>
+        `;
+        const sHeader = sRow.querySelector(".row-header");
+        const vGrid = sRow.querySelector(".v-grid");
+
+        sHeader.onclick = (e) => {
+            e.stopPropagation();
+            const exp = sHeader.getAttribute("data-expanded") === "true";
+            if(exp) {
+                vGrid.classList.add("hidden");
+                vGrid.innerHTML = "";
+                sHeader.setAttribute("data-expanded", "false");
+            } else {
+                sVids.forEach(vid => {
+                    const card = document.createElement("div");
+                    card.className = "video-card";
+                    card.innerHTML = `<img src="${vid.capa}" class="video-thumb"><div class="video-info">${getSafeTitle(vid)}</div>`;
+                    card.onclick = (ev) => { ev.stopPropagation(); openPlayer(vid, sVids); };
+                    vGrid.appendChild(card);
+                });
+                vGrid.classList.remove("hidden");
+                sHeader.setAttribute("data-expanded", "true");
+            }
+        };
+        container.appendChild(sRow);
+    }
 }
 
+function filterCat(c) { renderGrid(allVideos.filter(v => v.categoria === c), c); }
+function filterSub(c, s) { renderGrid(allVideos.filter(v => v.categoria === c && v.subcategoria === s), s); }
+
+// PLAYER
 function openPlayer(video, playlist) {
     currentPlaylist = playlist;
     currentIndex = playlist.findIndex(v => v.link === video.link);
     const modal = document.getElementById("video-modal");
     const wrapper = document.getElementById("player-wrapper");
     modal.classList.remove("hidden");
-    // CORREÇÃO: Chama getSafeTitle aqui também
     document.getElementById("modal-video-title").innerText = getSafeTitle(video);
 
     const url = video.link.trim();
-    const isDirectFile = /\.(mp4|webm|ogg|mov|m4v)($|\?)/i.test(url);
-
-    if (isDirectFile) {
+    if (/\.(mp4|webm|ogg|mov)($|\?)/i.test(url)) {
         wrapper.innerHTML = `<video id="main-player" controls autoplay><source src="${url}" type="video/mp4"></video>`;
         wrapper.querySelector('video').onended = () => changeVideo(1);
     } else {
-        let finalUrl = url;
-        if (url.includes("youtube.com") || url.includes("youtu.be")) {
-            finalUrl += (url.includes("?") ? "&" : "?") + "autoplay=1";
-        }
-        wrapper.innerHTML = `<iframe id="main-player" src="${finalUrl}" allow="autoplay; fullscreen" allowfullscreen></iframe>`;
+        let fUrl = url;
+        if (url.includes("youtube.com") || url.includes("youtu.be")) fUrl += (url.includes("?") ? "&" : "?") + "autoplay=1";
+        wrapper.innerHTML = `<iframe id="main-player" src="${fUrl}" allow="autoplay; fullscreen" allowfullscreen></iframe>`;
     }
 }
 
-function changeVideo(step) {
-    currentIndex += step;
-    if(currentIndex >= 0 && currentIndex < currentPlaylist.length) {
-        openPlayer(currentPlaylist[currentIndex], currentPlaylist);
-    } else if (currentIndex >= currentPlaylist.length) {
-        alert("Fim da playlist!");
-        closeModal();
-    }
+function changeVideo(s) {
+    currentIndex += s;
+    if(currentIndex >= 0 && currentIndex < currentPlaylist.length) openPlayer(currentPlaylist[currentIndex], currentPlaylist);
+    else closeModal();
 }
 
 function closeModal() {
