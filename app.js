@@ -50,7 +50,12 @@ async function initApp() {
     document.getElementById("main-content").classList.remove("hidden");
     
     try {
-        const res = await fetch('videos.json');
+        // CORREÇÃO DO GITHUB PAGES: Descobre o caminho base absoluto para o JSON de forma dinâmica
+        const pathName = window.location.pathname;
+        const basePath = pathName.substring(0, pathName.lastIndexOf('/')) + '/';
+        const jsonUrl = window.location.origin + basePath + 'videos.json';
+
+        const res = await fetch(jsonUrl);
         allVideos = await res.json();
         activeFilterVideos = allVideos;
         
@@ -166,7 +171,7 @@ function filterSub(c, s) {
     renderGrid(allVideos.filter(v => v.categoria === c && v.subcategoria === s), s); 
 }
 
-// CORREÇÃO MODAL UNIVERSAL: Roda qualquer site via Iframe ou link de arquivo direto (.mp4, .webm, etc)
+// Roda qualquer site via Iframe ou link de arquivo direto (.mp4, .webm, etc)
 function openPlayer(video, playlist) {
     currentPlaylist = playlist;
     currentIndex = playlist.findIndex(v => v.link === video.link);
@@ -177,12 +182,9 @@ function openPlayer(video, playlist) {
     document.getElementById("modal-video-title").innerText = video.título;
 
     const url = video.link.trim();
-    
-    // Verifica se o link termina ou aponta diretamente para uma extensão de arquivo de vídeo física
     const isDirectFile = /\.(mp4|webm|ogg|mov|m4v)($|\?)/i.test(url);
 
     if (isDirectFile) {
-        // Tag nativa HTML5 para arquivos de servidores (ex: Archive.org, links diretos CDN ou MP4s públicos)
         wrapper.innerHTML = `
             <video id="main-player" controls autoplay>
                 <source src="${url}" type="video/mp4">
@@ -192,8 +194,6 @@ function openPlayer(video, playlist) {
         const nativeVideo = wrapper.querySelector('video');
         nativeVideo.onended = () => changeVideo(1);
     } else {
-        // Embed universal para qualquer site de vídeo (Vimeo, YouTube Embed, Twitch, Dailymotion, etc)
-        // Adiciona automaticamente parâmetros comuns de autoplay se aplicável
         let finalEmbedUrl = url;
         if (url.includes("youtube.com") || url.includes("youtu.be")) {
             const separator = url.includes("?") ? "&" : "?";
@@ -210,9 +210,6 @@ function openPlayer(video, playlist) {
                 allow="autoplay; fullscreen; encrypted-media; picture-in-picture" 
                 allowfullscreen>
             </iframe>`;
-            
-        // Nota: Em iframes externos genéricos, devido às políticas de segurança entre domínios (CORS),
-        // o navegador pode restringir a escuta do evento de fim do vídeo. O botão de Próximo garante o salto manual.
     }
 }
 
