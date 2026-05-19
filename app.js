@@ -1,4 +1,4 @@
-const CREDENTIALS = { user: "admin", pass: "admin123" };
+const CREDENTIALS = { user: "Dipriv", pass: "arcnet2154" };
 const SESSION_TIMEOUT = 30 * 60 * 1000; // 30 minutos
 
 let allVideos = [];
