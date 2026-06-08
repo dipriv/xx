@@ -26,7 +26,7 @@ const USERS_DATABASE = {
     },
     "dipriv@xxx.com": { 
         defaultColor: "#ff0000",
-        firebaseUrl: "https://dipriv-47697-default-rtdb.firebaseio.com/.json",
+        firebaseUrl: "https://dipriv-47697-default-rtdb.firebaseio.com/xxx.json",
         ytApiKey: "AIzaSyD2x7SjdblFqlxQdKHlgfSZA5Nmjb1QbMk"
     },
 };
